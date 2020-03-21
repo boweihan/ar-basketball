@@ -12,7 +12,10 @@ import ARKit
 
 class ViewController: UIViewController, ARSCNViewDelegate {
 
+    @IBOutlet weak var addHoopButton: UIButton!
     @IBOutlet var sceneView: ARSCNView!
+    
+    var currentNode: SCNNode!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -24,10 +27,101 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         sceneView.showsStatistics = true
         
         // Create a new scene
-        let scene = SCNScene(named: "art.scnassets/ship.scn")!
+        let scene = SCNScene()
         
         // Set the scene to the view
         sceneView.scene = scene
+        
+        registerGestureRecognizer()
+    }
+    
+    func registerGestureRecognizer() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        sceneView.addGestureRecognizer(tap)
+    }
+    
+    // making sure the function is exposed to objective c (for use in #selector)
+    @objc func handleTap(gestureRecognizer: UITapGestureRecognizer) {
+        // Access the scene view
+        guard let sceneView = gestureRecognizer.view as? ARSCNView else {
+            return
+        }
+        // Access the point of view function...for position
+        guard let centerPoint = sceneView.pointOfView else {
+            return
+        }
+        // now we have access to a transform matrix....the orientation and also the location of the camera
+        let cameraTransform = centerPoint.transform
+        let cameraLocation = SCNVector3(x: cameraTransform.m41, y: cameraTransform.m42, z: cameraTransform.m43)
+        
+        // cameraOrientation is reversed
+        let cameraOrientation = SCNVector3(x: -cameraTransform.m31, y: -cameraTransform.m32, z: -cameraTransform.m33)
+        
+        let cameraPosition = SCNVector3Make(cameraLocation.x + cameraOrientation.x, cameraLocation.y + cameraOrientation.y, cameraLocation.z + cameraOrientation.z)
+        
+        // Creating the basketball
+        let ball = SCNSphere(radius: 0.15)
+        let ballMaterial = SCNMaterial()
+        ballMaterial.diffuse.contents = UIImage(named: "basketballSkin.png")
+        ball.materials = [ballMaterial]
+        let ballNode = SCNNode(geometry: ball)
+        ballNode.position = cameraPosition
+        
+        // create a physics body
+        let physicsShape = SCNPhysicsShape(node: ballNode, options: nil)
+        let physicsBody = SCNPhysicsBody(type: .dynamic, shape: physicsShape)
+        
+        ballNode.physicsBody = physicsBody
+        
+        // set force vector
+        let forceVector:Float = 6
+        
+        // apply physics to the ball
+        ballNode.physicsBody?.applyForce(SCNVector3(x: cameraPosition.x, y: cameraPosition.y * forceVector * 2, z: cameraPosition.z * forceVector), asImpulse: true)
+        
+        // attach to scene
+        sceneView.scene.rootNode.addChildNode(ballNode)
+    }
+    
+    func addBackBoard() {
+        guard let backboardScene = SCNScene(named: "art.scnassets/hoop.scn") else {
+            return
+        }
+        guard let backboardNode = backboardScene.rootNode.childNode(withName: "backboard", recursively: false) else {
+            return
+        }
+        backboardNode.position = SCNVector3(x: 0, y: 0.3, z: -5)
+        
+        // add a physics body to the backboard
+        let physicsShape = SCNPhysicsShape(node: backboardNode, options: [SCNPhysicsShape.Option.type: SCNPhysicsShape.ShapeType.concavePolyhedron])
+        let physicsBody = SCNPhysicsBody(type: .static, shape: physicsShape)
+        
+        backboardNode.physicsBody = physicsBody
+        
+        currentNode = backboardNode
+        
+        sceneView.scene.rootNode.addChildNode(backboardNode)
+    }
+    
+    // creating an action!
+    func horizontalAction(node: SCNNode) {
+        let leftAction = SCNAction.move(by: SCNVector3(x: -1, y: 0, z: 0), duration: 3) // 3 seconds
+        let rightAction = SCNAction.move(by: SCNVector3(x: 1, y: 0, z: 0), duration: 3)
+        
+        let actionSequence = SCNAction.sequence([leftAction, rightAction])
+        
+        node.runAction(SCNAction.repeat(actionSequence, count: 4))
+    }
+    
+    func roundAction(node: SCNNode) {
+        let upRight = SCNAction.move(by: SCNVector3(x: 1, y: 1, z: 0), duration: 2)
+        let downRight = SCNAction.move(by: SCNVector3(x: 1, y: -1, z: 0), duration: 2)
+        let downLeft = SCNAction.move(by: SCNVector3(x: -1, y: -1, z: 0), duration: 2)
+        let upLeft = SCNAction.move(by: SCNVector3(x: -1, y: 1, z: 0), duration: 2)
+        
+        let actionSequence = SCNAction.sequence([upRight, downRight, downLeft, upLeft])
+        
+        node.runAction(SCNAction.repeat(actionSequence, count: 3))
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -71,5 +165,26 @@ class ViewController: UIViewController, ARSCNViewDelegate {
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required
         
+    }
+    
+    
+    @IBAction func startRoundAction(_ sender: Any) {
+        roundAction(node: currentNode)
+    }
+    
+    
+    @IBAction func stopAllAction(_ sender: Any) {
+        currentNode.removeAllActions()
+    }
+    
+    
+    @IBAction func startHorizontalAction(_ sender: Any) {
+        horizontalAction(node: currentNode)
+    }
+    
+    
+    @IBAction func addHoopButton(_ sender: Any) {
+        addBackBoard()
+        addHoopButton.isHidden = true
     }
 }
